@@ -1,22 +1,24 @@
 # MySQL MCP Server
 
-A **read-only MySQL MCP (Model Context Protocol) server** built with TypeScript and Clean Architecture. Exposes 28 database tools to any MCP-compatible AI client — Claude Desktop, Claude Code, GitHub Copilot, Cursor, Codex CLI, and more — over stdio or HTTP.
+A **read-only MySQL MCP (Model Context Protocol) server** built with TypeScript and Clean Architecture. Exposes a focused set of database tools to any MCP-compatible AI client — Claude Desktop, Claude Code, GitHub Copilot, Cursor, Codex CLI — over stdio or HTTP.
 
-**Problem it solves:** AI assistants that need to reason about a real database require a safe, structured interface. This server provides exactly that: a read-only SQL gateway with SQL injection protection, schema introspection, and multi-connection support, all wired up to the MCP protocol so any compliant AI client can use it out of the box.
+**Read-only by design.** The server cannot mutate the database. Schema and data changes happen through **migration files** that the LLM produces and the user applies via their existing pipeline (Flyway, `mysql < file.sql`, etc.). The MCP only measures, never deploys.
+
+**Problem it solves:** AI assistants that need to reason about and tune a real database require a safe, structured interface with proper diagnostics — `EXPLAIN ANALYZE`, session profiling, slow-query digests, index health. This server provides that. It is *not* a generic SQL gateway; it is a senior-DBA toolkit for an LLM.
 
 ---
 
 ## Features
 
-- **Read-only by design** — only `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, and `USE` are permitted
-- **SQL injection protection** — dual-layer validation: AST parsing (`node-sql-parser`) + regex fallback
-- **28 database tools** — schema browsing, query execution, server introspection, procedure comparison
-- **Multi-connection** — define named connections and switch between them at runtime
-- **Dual transport** — MCP stdio (default) or HTTP REST API
-- **SSH tunneling** — connect through SSH bastion hosts
-- **Audit logging** — JSONL audit trail for all executed queries
-- **Schema filtering** — include/exclude schemas visible to the AI client
-- **Config layering** — CLI args > env vars > YAML/JSON config file > built-in defaults
+- **Read-only by design** — only `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN` (incl. `ANALYZE` / `FORMAT=TREE|JSON`), `USE`, and `WITH` are permitted. `SET` is hard-coded server-side inside specific tools (e.g. `profile_query`); user input never reaches a `SET` statement.
+- **Diagnostic-first toolset** — `explain_query` (with parsed bottleneck), `profile_query` (session profiling), `top_slow_queries` (perf-schema digest), `processlist`, `index_health` (unused + redundant indexes).
+- **SQL injection protection** — dual-layer validation: AST parsing (`node-sql-parser`) + regex.
+- **Multi-connection** — named connections, switch at runtime.
+- **Dual transport** — MCP stdio (default) or HTTP REST API.
+- **SSH tunneling** — connect through bastion hosts.
+- **Audit logging** — JSONL audit trail for every executed query.
+- **Schema filtering** — include/exclude schemas the AI client can see.
+- **Config layering** — CLI args > env vars > YAML/JSON > built-in defaults.
 
 ---
 
@@ -217,17 +219,30 @@ See [docs/INTEGRATION.md](docs/INTEGRATION.md) for platform-specific steps, `npm
 
 ---
 
-## Tools (28 total)
+## Tools
 
-The first **12 tools** are always available. The remaining **16 extended tools** require `MYSQL_MCP_EXTENDED=true`.
+Core tools are always available. Extended tools require `MYSQL_MCP_EXTENDED=true`.
 
-**Core (6):** `ping`, `server_info`, `list_databases`, `list_tables`, `describe_table`, `run_query`
+**Core (5):** `server_info`, `list_databases`, `list_tables`, `describe_table`, `run_query`
 
 **Schema (4):** `list_schemas`, `use_schema`, `describe_schema`, `schema_search`
 
 **Connection (2):** `list_connections`, `use_connection`
 
-**Extended (16):** `list_indexes`, `show_create_table`, `explain_query`, `list_views`, `list_triggers`, `list_procedures`, `show_create_procedure`, `call_procedure`, `compare_procedures`, `list_functions`, `list_partitions`, `database_size`, `table_size`, `foreign_keys`, `list_status`, `list_variables`
+**Extended (11):**
+- Diagnostics: `explain_query` (with `format: default|analyze|tree|json`), `profile_query`, `call_procedure`, `top_slow_queries`, `processlist`
+- Schema introspection: `list_indexes`, `show_create_table`, `list_procedures`, `show_create_procedure`, `index_health`, `list_objects` (kind ∈ view, trigger, function, partition, status, variable)
+
+### Workflow: read-only diagnostics, file-based migrations
+
+The server **never** mutates the database. The intended workflow is:
+
+1. The LLM uses these tools to **measure** — find the slow query (`top_slow_queries`), localise the cost (`profile_query`, `explain_query` with `format=analyze`), inspect indexes (`index_health`).
+2. The LLM **proposes a fix as a file** — edits a Flyway-style migration (`R__*.sql` repeatable, `V__*.sql` versioned) using the host editor's file tools.
+3. **You apply the file** with your normal deploy pipeline (Flyway, `mysql < file.sql`, etc.). The MCP is not in the loop here.
+4. The LLM **verifies** by re-running the diagnostic tools.
+
+This separation keeps mutations under your control while letting the LLM be effective at the diagnostic side.
 
 See [docs/TOOLS.md](docs/TOOLS.md) for inputs, outputs, and examples for every tool.
 

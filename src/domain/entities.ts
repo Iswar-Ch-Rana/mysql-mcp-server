@@ -153,3 +153,80 @@ export interface AuditEntry {
   timestamp: string;
   schema: string;
 }
+
+export interface ProfileEntry {
+  queryId: number;
+  durationSeconds: number;
+  query: string;
+}
+
+export interface ProfileResult {
+  /** Result rows from the profiled query (first result set if it was a CALL) */
+  resultSets: ProcedureResultSet[];
+  /** Per-statement profile timings as reported by SHOW PROFILES */
+  profile: ProfileEntry[];
+  /** The slowest profile entry — convenient for the LLM */
+  hottest: ProfileEntry | null;
+  /** Total wall-clock time spent in MCP-side execution */
+  totalMs: number;
+}
+
+export interface TopQueryRow {
+  query: string;
+  db: string | null;
+  exec_count: number;
+  total_ms: number;
+  avg_ms: number;
+  max_ms: number;
+  rows_examined: number;
+  rows_sent: number;
+  no_index_used: number;
+  FIRST_SEEN: string;
+  LAST_SEEN: string;
+}
+
+export interface ProcessRow {
+  id: number;
+  user: string;
+  host: string;
+  db: string | null;
+  command: string;
+  seconds: number;
+  state: string | null;
+  info: string | null;
+}
+
+export interface UnusedIndexRow {
+  schema: string;
+  table: string;
+  index: string;
+}
+
+export interface RedundantIndex {
+  schema: string;
+  table: string;
+  redundantIndex: string;
+  supersededBy: string;
+  reason: string;
+}
+
+export interface IndexHealthReport {
+  unused: UnusedIndexRow[];
+  redundant: RedundantIndex[];
+}
+
+export interface ExplainBottleneck {
+  operation: string;
+  actualTimeMs: number | null;
+  loops: number | null;
+  perIterationUs: number | null;
+}
+
+export interface ExplainResult {
+  format: 'default' | 'analyze' | 'tree' | 'json';
+  raw: QueryResult;
+  /** Parsed hottest node (only when format=='analyze' and the tree is available) */
+  hottest: ExplainBottleneck | null;
+  /** Notable plan flags pulled out of the tree (e.g. "Using temporary") */
+  warnings: string[];
+}

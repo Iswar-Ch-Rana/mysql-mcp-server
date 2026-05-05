@@ -12,6 +12,7 @@ import { DatabaseService } from '../../src/application/services/database.service
 import { SchemaService } from '../../src/application/services/schema.service.js';
 import { QueryService } from '../../src/application/services/query.service.js';
 import { ConnectionService } from '../../src/application/services/connection.service.js';
+import { IndexHealthService } from '../../src/application/services/index-health.service.js';
 import type { FeatureFlags } from '../../src/shared/config.js';
 
 function createServices() {
@@ -30,8 +31,17 @@ function createServices() {
       { default: { name: 'default', dsn: 'mysql://root@localhost/test' } },
       logger,
     ),
+    indexHealth: new IndexHealthService(schemaRepo as any, queryRepo as any),
   };
 }
+
+// 5 core + 4 schema + 2 connection = 11
+const BASE_COUNT = 11;
+// list_indexes, show_create_table, explain_query, list_procedures,
+// show_create_procedure, call_procedure, profile_query,
+// top_slow_queries, processlist, index_health, list_objects = 11
+const EXTENDED_COUNT = 11;
+const FULL_COUNT = BASE_COUNT + EXTENDED_COUNT;
 
 describe('ToolRegistry', () => {
   let registry: ToolRegistry;
@@ -48,7 +58,6 @@ describe('ToolRegistry', () => {
       handler: async () => ({ content: [{ type: 'text', text: 'ok' }] }),
       group: 'core',
     });
-
     expect(registry.get('test_tool')).toBeDefined();
     expect(registry.get('test_tool')!.name).toBe('test_tool');
   });
@@ -72,7 +81,6 @@ describe('ToolRegistry', () => {
       handler: async () => ({ content: [{ type: 'text', text: '' }] }),
       group: 'core',
     });
-
     expect(registry.getAll()).toHaveLength(2);
     expect(registry.getNames()).toEqual(['tool1', 'tool2']);
   });
@@ -84,48 +92,61 @@ describe('ToolRegistry', () => {
 
       registry.buildAll(services, flags);
 
-      expect(registry.getAll()).toHaveLength(12);
+      expect(registry.getAll()).toHaveLength(BASE_COUNT);
+      // Core
       expect(registry.getNames()).toContain('list_databases');
       expect(registry.getNames()).toContain('list_tables');
       expect(registry.getNames()).toContain('describe_table');
       expect(registry.getNames()).toContain('run_query');
-      expect(registry.getNames()).toContain('ping');
       expect(registry.getNames()).toContain('server_info');
+      // Schema
       expect(registry.getNames()).toContain('list_schemas');
       expect(registry.getNames()).toContain('use_schema');
       expect(registry.getNames()).toContain('describe_schema');
       expect(registry.getNames()).toContain('schema_search');
+      // Connection
       expect(registry.getNames()).toContain('list_connections');
       expect(registry.getNames()).toContain('use_connection');
+      // Dropped + extended not present
+      expect(registry.getNames()).not.toContain('ping');
       expect(registry.getNames()).not.toContain('list_indexes');
+      expect(registry.getNames()).not.toContain('profile_query');
     });
 
-    it('should register all 28 tools when extendedTools is true', () => {
+    it('should register all tools when extendedTools is true', () => {
       const services = createServices();
       const flags: FeatureFlags = { extendedTools: true, tokenTracking: false };
 
       registry.buildAll(services, flags);
 
-      expect(registry.getAll()).toHaveLength(28);
+      expect(registry.getAll()).toHaveLength(FULL_COUNT);
+      // Extended
       expect(registry.getNames()).toContain('list_indexes');
       expect(registry.getNames()).toContain('show_create_table');
       expect(registry.getNames()).toContain('explain_query');
-      expect(registry.getNames()).toContain('list_views');
-      expect(registry.getNames()).toContain('list_triggers');
       expect(registry.getNames()).toContain('list_procedures');
       expect(registry.getNames()).toContain('show_create_procedure');
       expect(registry.getNames()).toContain('call_procedure');
-      expect(registry.getNames()).toContain('compare_procedures');
-      expect(registry.getNames()).toContain('list_functions');
-      expect(registry.getNames()).toContain('list_partitions');
-      expect(registry.getNames()).toContain('database_size');
-      expect(registry.getNames()).toContain('table_size');
-      expect(registry.getNames()).toContain('foreign_keys');
-      expect(registry.getNames()).toContain('list_status');
-      expect(registry.getNames()).toContain('list_variables');
+      expect(registry.getNames()).toContain('profile_query');
+      expect(registry.getNames()).toContain('top_slow_queries');
+      expect(registry.getNames()).toContain('processlist');
+      expect(registry.getNames()).toContain('index_health');
+      expect(registry.getNames()).toContain('list_objects');
+      // Dropped tools absent
+      expect(registry.getNames()).not.toContain('ping');
+      expect(registry.getNames()).not.toContain('compare_procedures');
+      expect(registry.getNames()).not.toContain('foreign_keys');
+      expect(registry.getNames()).not.toContain('database_size');
+      expect(registry.getNames()).not.toContain('table_size');
+      expect(registry.getNames()).not.toContain('list_views');
+      expect(registry.getNames()).not.toContain('list_triggers');
+      expect(registry.getNames()).not.toContain('list_functions');
+      expect(registry.getNames()).not.toContain('list_partitions');
+      expect(registry.getNames()).not.toContain('list_status');
+      expect(registry.getNames()).not.toContain('list_variables');
     });
 
-    it('should have correct tool count: 12 core/schema/connection + 16 extended = 28', () => {
+    it(`should have ${BASE_COUNT} base tools and ${FULL_COUNT} total`, () => {
       const services = createServices();
 
       registry.buildAll(services, { extendedTools: false, tokenTracking: false });
@@ -135,9 +156,9 @@ describe('ToolRegistry', () => {
       registry2.buildAll(services, { extendedTools: true, tokenTracking: false });
       const fullCount = registry2.getAll().length;
 
-      expect(baseCount).toBe(12);
-      expect(fullCount).toBe(28);
-      expect(fullCount - baseCount).toBe(16);
+      expect(baseCount).toBe(BASE_COUNT);
+      expect(fullCount).toBe(FULL_COUNT);
+      expect(fullCount - baseCount).toBe(EXTENDED_COUNT);
     });
   });
 });

@@ -53,6 +53,26 @@ export class MockQueryRepository implements IQueryRepository {
     durationMs: 5,
     truncated: false,
   });
+  callProcedure = vi.fn().mockResolvedValue({
+    procedureName: 'test',
+    resultSets: [],
+    durationMs: 5,
+  });
+  profileQuery = vi.fn().mockResolvedValue({
+    resultSets: [],
+    profile: [],
+    hottest: null,
+    totalMs: 10,
+  });
+  profileProcedure = vi.fn().mockResolvedValue({
+    resultSets: [],
+    profile: [],
+    hottest: null,
+    totalMs: 10,
+  });
+  topSlowQueries = vi.fn().mockResolvedValue([]);
+  processList = vi.fn().mockResolvedValue([]);
+  unusedIndexes = vi.fn().mockResolvedValue([]);
 }
 
 export class MockSqlValidator implements ISqlValidator {

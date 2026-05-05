@@ -5,10 +5,7 @@ import type { ToolDefinition, ToolResponse } from './registry.js';
 export function createCallProcedureTool(service: QueryService): ToolDefinition {
   return {
     name: 'call_procedure',
-    description:
-      'Execute a stored procedure and return all result sets. ' +
-      'Use list_procedures to discover available procedures and ' +
-      'show_create_procedure to inspect parameter signatures.',
+    description: 'Execute a stored procedure; returns all result sets.',
     inputSchema: z.object({
       schema: z.string().describe('Schema/database name where the procedure lives'),
       procedure: z.string().describe('Stored procedure name'),

@@ -62,7 +62,7 @@ describe('QueryService', () => {
       const result = await service.explainQuery('SELECT 1');
 
       expect(validator.validate).toHaveBeenCalledWith('SELECT 1');
-      expect(queryRepo.explainQuery).toHaveBeenCalledWith('SELECT 1');
+      expect(queryRepo.explainQuery).toHaveBeenCalledWith('SELECT 1', 'default');
       expect(result.rowCount).toBe(1);
     });
 

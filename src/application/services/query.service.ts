@@ -1,7 +1,14 @@
-import type { IQueryRepository } from '../../domain/interfaces/query.repository.js';
+import type { IQueryRepository, ExplainFormat } from '../../domain/interfaces/query.repository.js';
 import type { ISqlValidator } from '../../domain/interfaces/sql-validator.js';
 import type { IAuditLogger } from '../../domain/interfaces/logger.js';
-import type { QueryResult, ProcedureResult } from '../../domain/entities.js';
+import type {
+  QueryResult,
+  ProcedureResult,
+  ProfileResult,
+  TopQueryRow,
+  ProcessRow,
+  UnusedIndexRow,
+} from '../../domain/entities.js';
 import { SqlValidationError } from '../../domain/errors.js';
 
 export class QueryService {
@@ -50,13 +57,12 @@ export class QueryService {
     }
   }
 
-  async explainQuery(query: string): Promise<QueryResult> {
+  async explainQuery(query: string, format: ExplainFormat = 'default'): Promise<QueryResult> {
     const validation = this.sqlValidator.validate(query);
     if (!validation.isValid) {
       throw new SqlValidationError(validation.reason ?? 'SQL validation failed');
     }
-
-    return this.queryRepo.explainQuery(query);
+    return this.queryRepo.explainQuery(query, format);
   }
 
   async callProcedure(schema: string, procedure: string, args: unknown[]): Promise<ProcedureResult> {
@@ -86,5 +92,73 @@ export class QueryService {
       });
       throw err;
     }
+  }
+
+  async profileQuery(query: string, schema?: string): Promise<ProfileResult> {
+    const validation = this.sqlValidator.validate(query);
+    if (!validation.isValid) {
+      throw new SqlValidationError(validation.reason ?? 'SQL validation failed');
+    }
+    const start = Date.now();
+    try {
+      const result = await this.queryRepo.profileQuery(query, [], this.timeoutSeconds);
+      this.auditLogger.logQuery({
+        query: `[profile] ${query}`,
+        durationMs: Date.now() - start,
+        rowCount: result.resultSets.reduce((s, rs) => s + rs.rowCount, 0),
+        success: true,
+        timestamp: new Date().toISOString(),
+        schema: schema ?? '',
+      });
+      return result;
+    } catch (err) {
+      this.auditLogger.logQuery({
+        query: `[profile] ${query}`,
+        durationMs: Date.now() - start,
+        rowCount: 0,
+        success: false,
+        timestamp: new Date().toISOString(),
+        schema: schema ?? '',
+      });
+      throw err;
+    }
+  }
+
+  async profileProcedure(schema: string, procedure: string, args: unknown[]): Promise<ProfileResult> {
+    const start = Date.now();
+    try {
+      const result = await this.queryRepo.profileProcedure(schema, procedure, args, this.timeoutSeconds);
+      this.auditLogger.logQuery({
+        query: `[profile] CALL ${schema}.${procedure}(...)`,
+        durationMs: Date.now() - start,
+        rowCount: result.resultSets.reduce((s, rs) => s + rs.rowCount, 0),
+        success: true,
+        timestamp: new Date().toISOString(),
+        schema,
+      });
+      return result;
+    } catch (err) {
+      this.auditLogger.logQuery({
+        query: `[profile] CALL ${schema}.${procedure}(...)`,
+        durationMs: Date.now() - start,
+        rowCount: 0,
+        success: false,
+        timestamp: new Date().toISOString(),
+        schema,
+      });
+      throw err;
+    }
+  }
+
+  async topSlowQueries(limit: number, schema?: string): Promise<TopQueryRow[]> {
+    return this.queryRepo.topSlowQueries(limit, schema);
+  }
+
+  async processList(includeSleep: boolean): Promise<ProcessRow[]> {
+    return this.queryRepo.processList(includeSleep);
+  }
+
+  async unusedIndexes(schema?: string): Promise<UnusedIndexRow[]> {
+    return this.queryRepo.unusedIndexes(schema);
   }
 }

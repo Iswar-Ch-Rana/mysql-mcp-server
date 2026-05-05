@@ -5,7 +5,7 @@ import type { ToolDefinition, ToolResponse } from './registry.js';
 export function createRunQueryTool(service: QueryService): ToolDefinition {
   return {
     name: 'run_query',
-    description: 'Execute a read-only SQL query (SELECT, SHOW, DESCRIBE, EXPLAIN)',
+    description: 'Run a read-only SQL query: SELECT, SHOW, DESCRIBE, EXPLAIN (incl. ANALYZE / FORMAT=TREE|JSON), USE, WITH.',
     inputSchema: z.object({
       query: z.string().describe('SQL SELECT/SHOW/DESCRIBE/EXPLAIN query'),
       schema: z.string().optional().describe('Schema context'),

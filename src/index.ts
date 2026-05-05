@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import dotenv from 'dotenv';
 import { parseArgs } from './interface/cli/args.js';
 import { loadConfig } from './infrastructure/config/loader.js';
@@ -13,6 +14,7 @@ import { DatabaseService } from './application/services/database.service.js';
 import { SchemaService } from './application/services/schema.service.js';
 import { QueryService } from './application/services/query.service.js';
 import { ConnectionService } from './application/services/connection.service.js';
+import { IndexHealthService } from './application/services/index-health.service.js';
 import { ToolRegistry } from './interface/tools/registry.js';
 import { StdioTransport } from './infrastructure/transport/stdio.transport.js';
 import { HttpTransport } from './infrastructure/transport/http.transport.js';
@@ -95,6 +97,7 @@ async function main(): Promise<void> {
     config.query.timeoutSeconds,
   );
   const connectionService = new ConnectionService(config.connections, logger);
+  const indexHealthService = new IndexHealthService(repository, repository);
 
   // Create tool registry and build all tools
   const registry = new ToolRegistry();
@@ -104,6 +107,7 @@ async function main(): Promise<void> {
       schema: schemaService,
       query: queryService,
       connection: connectionService,
+      indexHealth: indexHealthService,
     },
     config.features,
   );

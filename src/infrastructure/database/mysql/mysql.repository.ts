@@ -1,6 +1,6 @@
 import type { IDatabaseRepository } from '../../../domain/interfaces/database.repository.js';
 import type { ISchemaRepository } from '../../../domain/interfaces/schema.repository.js';
-import type { IQueryRepository } from '../../../domain/interfaces/query.repository.js';
+import type { IQueryRepository, ExplainFormat } from '../../../domain/interfaces/query.repository.js';
 import type {
   DatabaseInfo,
   SizeInfo,
@@ -20,6 +20,10 @@ import type {
   ObjectType,
   QueryResult,
   ProcedureResult,
+  ProfileResult,
+  TopQueryRow,
+  ProcessRow,
+  UnusedIndexRow,
 } from '../../../domain/entities.js';
 import { quoteIdentifier } from '../../../domain/validators/identifier.validator.js';
 import { isMariaDb } from './mysql.utils.js';
@@ -500,18 +504,23 @@ export class MySqlRepository implements IDatabaseRepository, ISchemaRepository, 
   // ─── IQueryRepository ──────────────────────────────────────────────
 
   async executeQuery(sql: string, params: unknown[], maxRows: number, timeoutSeconds: number): Promise<QueryResult> {
-    let querySql = sql.trim();
-    if (!/\bLIMIT\b/i.test(querySql)) {
-      querySql = querySql.replace(/;\s*$/, '');
-      querySql += ` LIMIT ${maxRows + 1}`;
-    }
+    const querySql = sql.trim().replace(/;\s*$/, '');
+
+    // Auto-append LIMIT only for plain SELECT / WITH (CTE) queries that don't
+    // already have one. EXPLAIN, SHOW, DESCRIBE, USE either don't accept LIMIT
+    // or have their own row-count semantics.
+    const head = querySql.replace(/^\s+/, '').slice(0, 8).toLowerCase();
+    const isSelectLike = head.startsWith('select') || head.startsWith('with');
+    const finalSql = isSelectLike && !/\bLIMIT\b/i.test(querySql)
+      ? `${querySql} LIMIT ${maxRows + 1}`
+      : querySql;
 
     const start = Date.now();
-    const rows = await this.adapter.query<Record<string, unknown>>(querySql, params, timeoutSeconds * 1000);
+    const rows = await this.adapter.query<Record<string, unknown>>(finalSql, params, timeoutSeconds * 1000);
     const durationMs = Date.now() - start;
 
     let truncated = false;
-    if (rows.length > maxRows) {
+    if (isSelectLike && rows.length > maxRows) {
       rows.length = maxRows;
       truncated = true;
     }
@@ -527,8 +536,17 @@ export class MySqlRepository implements IDatabaseRepository, ISchemaRepository, 
     };
   }
 
-  async explainQuery(sql: string): Promise<QueryResult> {
-    const explainSql = `EXPLAIN ${sql.trim().replace(/;\s*$/, '')}`;
+  async explainQuery(sql: string, format: ExplainFormat = 'default'): Promise<QueryResult> {
+    const inner = sql.trim().replace(/;\s*$/, '');
+    let prefix = 'EXPLAIN ';
+    switch (format) {
+      case 'analyze': prefix = 'EXPLAIN ANALYZE '; break;
+      case 'tree':    prefix = 'EXPLAIN FORMAT=TREE '; break;
+      case 'json':    prefix = 'EXPLAIN FORMAT=JSON '; break;
+      case 'default':
+      default:        prefix = 'EXPLAIN '; break;
+    }
+    const explainSql = prefix + inner;
     const start = Date.now();
     const rows = await this.adapter.query<Record<string, unknown>>(explainSql);
     const durationMs = Date.now() - start;
@@ -541,5 +559,65 @@ export class MySqlRepository implements IDatabaseRepository, ISchemaRepository, 
       durationMs,
       truncated: false,
     };
+  }
+
+  async profileQuery(sql: string, params: unknown[], timeoutSeconds: number): Promise<ProfileResult> {
+    return this.adapter.profileStatements([sql], params, timeoutSeconds * 1000);
+  }
+
+  async profileProcedure(schema: string, procedure: string, args: unknown[], timeoutSeconds: number): Promise<ProfileResult> {
+    const quotedSchema = this.sanitizeIdentifier(schema);
+    const quotedProcedure = this.sanitizeIdentifier(procedure);
+    const placeholders = args.length > 0 ? args.map(() => '?').join(', ') : '';
+    const callSql = `CALL ${quotedSchema}.${quotedProcedure}(${placeholders})`;
+    return this.adapter.profileStatements([callSql], args, timeoutSeconds * 1000, true);
+  }
+
+  async topSlowQueries(limit: number, schema?: string): Promise<TopQueryRow[]> {
+    let sql = `SELECT
+        DIGEST_TEXT AS query,
+        SCHEMA_NAME AS db,
+        COUNT_STAR AS exec_count,
+        ROUND(SUM_TIMER_WAIT / 1e9, 2)  AS total_ms,
+        ROUND(AVG_TIMER_WAIT / 1e9, 2)  AS avg_ms,
+        ROUND(MAX_TIMER_WAIT / 1e9, 2)  AS max_ms,
+        SUM_ROWS_EXAMINED               AS rows_examined,
+        SUM_ROWS_SENT                   AS rows_sent,
+        SUM_NO_INDEX_USED               AS no_index_used,
+        FIRST_SEEN, LAST_SEEN
+      FROM performance_schema.events_statements_summary_by_digest
+      WHERE DIGEST_TEXT IS NOT NULL`;
+    const params: unknown[] = [];
+    if (schema) {
+      sql += ' AND SCHEMA_NAME = ?';
+      params.push(schema);
+    }
+    sql += ' ORDER BY SUM_TIMER_WAIT DESC LIMIT ?';
+    params.push(Math.max(1, Math.min(100, limit)));
+    return this.adapter.query<TopQueryRow>(sql, params);
+  }
+
+  async processList(includeSleep: boolean): Promise<ProcessRow[]> {
+    let sql = `SELECT ID AS id, USER AS user, HOST AS host, DB AS db,
+                      COMMAND AS command, TIME AS seconds,
+                      STATE AS state, LEFT(IFNULL(INFO, ''), 500) AS info
+               FROM information_schema.PROCESSLIST`;
+    if (!includeSleep) {
+      sql += " WHERE COMMAND <> 'Sleep'";
+    }
+    sql += ' ORDER BY TIME DESC';
+    return this.adapter.query<ProcessRow>(sql);
+  }
+
+  async unusedIndexes(schema?: string): Promise<UnusedIndexRow[]> {
+    let sql = `SELECT object_schema AS \`schema\`, object_name AS \`table\`, index_name AS \`index\`
+               FROM sys.schema_unused_indexes`;
+    const params: unknown[] = [];
+    if (schema) {
+      sql += ' WHERE object_schema = ?';
+      params.push(schema);
+    }
+    sql += ' ORDER BY object_schema, object_name, index_name';
+    return this.adapter.query<UnusedIndexRow>(sql, params);
   }
 }

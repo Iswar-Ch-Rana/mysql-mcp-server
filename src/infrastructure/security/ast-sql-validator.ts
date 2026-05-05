@@ -1,8 +1,9 @@
 import pkg from 'node-sql-parser';
 const { Parser } = pkg;
 import type { ISqlValidator, ValidationResult } from '../../domain/interfaces/sql-validator.js';
+import { stripExplainPrefix } from '../../domain/validators/sql.validator.js';
 
-const ALLOWED_TYPES = new Set(['select', 'show', 'desc', 'explain', 'use']);
+const ALLOWED_TYPES = new Set(['select', 'show', 'desc', 'explain', 'use', 'with']);
 const DANGEROUS_FUNCTIONS = new Set(['sleep', 'benchmark', 'load_file', 'sys_exec', 'sys_eval', 'sys_get']);
 
 function walkAst(node: unknown, visitor: (n: Record<string, unknown>) => void): void {
@@ -47,9 +48,14 @@ export class AstSqlValidator implements ISqlValidator {
   private readonly parser = new Parser();
 
   validate(sql: string): ValidationResult {
+    // node-sql-parser doesn't understand MySQL's EXPLAIN extensions
+    // (`EXPLAIN ANALYZE`, `EXPLAIN FORMAT=TREE|JSON`). Strip the prefix so
+    // we validate the inner SELECT — which is what actually executes.
+    const innerSql = stripExplainPrefix(sql);
+
     let ast: unknown;
     try {
-      ast = this.parser.astify(sql, { database: 'MySQL' });
+      ast = this.parser.astify(innerSql, { database: 'MySQL' });
     } catch (err) {
       return { isValid: false, reason: `SQL parse error: ${(err as Error).message}` };
     }
