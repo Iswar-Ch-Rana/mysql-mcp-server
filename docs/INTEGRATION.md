@@ -2,6 +2,24 @@
 
 This guide explains how to add the MySQL MCP Server to AI clients (Claude, VS Code, Codex, Cursor) and how to consume the built package in another Node.js project.
 
+## Before You Start: credentials live in `.env`
+
+Every config block below is deliberately short — **no `env` block, no credentials.**
+
+Set your connection once in `.env` in the repo root (see [Setup](SETUP.md)). The server
+resolves that file from its own install directory, so it finds the same credentials no
+matter which client launches it or from what working directory. `.env` is loaded with
+`override`, which means a client `env` block **cannot** change a variable `.env` defines
+— it is silently ignored. Putting credentials in two places is what makes MCP servers
+mysteriously connect to the wrong database; keep them in `.env` only.
+
+Before wiring up any client, confirm the server works standalone:
+
+```bash
+npm run build
+node dist/index.js --print-config   # resolved config, password masked
+```
+
 ---
 
 ## Using this Package in Another Project
@@ -91,11 +109,8 @@ Add the server:
   "mcpServers": {
     "mysql": {
       "command": "node",
-      "args": ["/absolute/path/to/mysql-mcp-server-ts/dist/index.js"],
-      "env": {
-        "MYSQL_DSN": "mysql://user:password@localhost:3306/mydb",
-        "MYSQL_MCP_EXTENDED": "true"
-      }
+      "args": ["/absolute/path/to/mysql-mcp-server/dist/index.js"],
+      "cwd": "/absolute/path/to/mysql-mcp-server"
     }
   }
 }
@@ -108,11 +123,7 @@ If you used `npm link`, you can use the binary name instead:
   "mcpServers": {
     "mysql": {
       "command": "mysql-mcp-server",
-      "args": [],
-      "env": {
-        "MYSQL_DSN": "mysql://user:password@localhost:3306/mydb",
-        "MYSQL_MCP_EXTENDED": "true"
-      }
+      "args": []
     }
   }
 }
@@ -129,11 +140,8 @@ Restart Claude Desktop after saving. Look for the hammer (🔨) icon in the chat
   "mcpServers": {
     "mysql": {
       "command": "node",
-      "args": ["/absolute/path/to/mysql-mcp-server-ts/dist/index.js"],
-      "env": {
-        "MYSQL_DSN": "mysql://user:password@localhost:3306/mydb",
-        "MYSQL_MCP_EXTENDED": "true"
-      }
+      "args": ["/absolute/path/to/mysql-mcp-server/dist/index.js"],
+      "cwd": "/absolute/path/to/mysql-mcp-server"
     }
   }
 }
@@ -142,9 +150,7 @@ Restart Claude Desktop after saving. Look for the hammer (🔨) icon in the chat
 **Option 2 — via the CLI:**
 
 ```bash
-claude mcp add mysql node /path/to/mysql-mcp-server-ts/dist/index.js \
-  -e MYSQL_DSN="mysql://user:password@localhost:3306/mydb" \
-  -e MYSQL_MCP_EXTENDED="true"
+claude mcp add mysql node /path/to/mysql-mcp-server/dist/index.js
 ```
 
 **Usage:**
@@ -169,11 +175,8 @@ claude> "How many active users were created this year?"
     "servers": {
       "mysql": {
         "command": "node",
-        "args": ["/absolute/path/to/mysql-mcp-server-ts/dist/index.js"],
-        "env": {
-          "MYSQL_DSN": "mysql://user:password@localhost:3306/mydb",
-          "MYSQL_MCP_EXTENDED": "true"
-        }
+        "args": ["/absolute/path/to/mysql-mcp-server/dist/index.js"],
+        "cwd": "/absolute/path/to/mysql-mcp-server"
       }
     }
   }
@@ -187,11 +190,8 @@ claude> "How many active users were created this year?"
   "servers": {
     "mysql": {
       "command": "node",
-      "args": ["/absolute/path/to/mysql-mcp-server-ts/dist/index.js"],
-      "env": {
-        "MYSQL_DSN": "mysql://user:password@localhost:3306/mydb",
-        "MYSQL_MCP_EXTENDED": "true"
-      }
+      "args": ["/absolute/path/to/mysql-mcp-server/dist/index.js"],
+      "cwd": "/absolute/path/to/mysql-mcp-server"
     }
   }
 }
@@ -208,10 +208,7 @@ mcpServers:
   - name: mysql
     command: node
     args:
-      - /absolute/path/to/mysql-mcp-server-ts/dist/index.js
-    env:
-      MYSQL_DSN: mysql://user:password@localhost:3306/mydb
-      MYSQL_MCP_EXTENDED: "true"
+      - /absolute/path/to/mysql-mcp-server/dist/index.js
 ```
 
 ### Cursor
@@ -223,11 +220,8 @@ In Cursor Settings → MCP:
   "mcpServers": {
     "mysql": {
       "command": "node",
-      "args": ["/absolute/path/to/mysql-mcp-server-ts/dist/index.js"],
-      "env": {
-        "MYSQL_DSN": "mysql://user:password@localhost:3306/mydb",
-        "MYSQL_MCP_EXTENDED": "true"
-      }
+      "args": ["/absolute/path/to/mysql-mcp-server/dist/index.js"],
+      "cwd": "/absolute/path/to/mysql-mcp-server"
     }
   }
 }
@@ -246,10 +240,7 @@ mcp_servers:
   mysql:
     command: node
     args:
-      - /absolute/path/to/mysql-mcp-server-ts/dist/index.js
-    env:
-      MYSQL_DSN: mysql://user:password@localhost:3306/mydb
-      MYSQL_MCP_EXTENDED: "true"
+      - /absolute/path/to/mysql-mcp-server/dist/index.js
 ```
 
 **Usage:**
@@ -273,43 +264,61 @@ All editor configs point to `dist/index.js` — the compiled output. Run `npm ru
 
 Relative paths may not resolve correctly depending on how the editor launches the server process.
 
+### Everything else goes in `.env`, not the client config
+
+The three tips below are all `.env` edits. A client `env` block is ignored for any
+variable `.env` defines, so that is the only place worth changing. Restart the editor
+after editing `.env` — the server reads it once at startup.
+
 ### Extended tools
 
-Set `MYSQL_MCP_EXTENDED=true` in the `env` block to unlock all 28 tools (16 additional tools are disabled by default to reduce noise in smaller setups).
+```env
+MYSQL_MCP_EXTENDED=true
+```
+
+Unlocks the 11 extended tools — 22 total instead of 11. They are off by default to
+reduce tool-list noise in smaller setups.
 
 ### Multiple databases
 
-Define multiple named connections and switch between them at runtime:
+Define named connections and switch between them at runtime:
 
-```json
-{
-  "env": {
-    "MYSQL_DSN": "mysql://user:pass@prod-db:3306/app",
-    "MYSQL_CONNECTIONS": "{\"staging\":{\"dsn\":\"mysql://user:pass@staging-db:3306/app\"}}"
-  }
-}
+```env
+MYSQL_CONNECTIONS={"default":{"dsn":"mysql://user:pass@localhost:3306/app"},"staging":{"dsn":"mysql://user:pass@staging-db:3306/app"}}
 ```
 
 Use the `use_connection` tool to switch: `"Switch to the staging database"`.
 
+Note that `MYSQL_CONNECTIONS` **replaces** the connection set — it does not add to the
+`MYSQL_HOST`/`MYSQL_DSN` default. One entry **must** be named `default`, or startup
+fails with `Missing required configuration: connections.default.dsn`.
+
 ### SSH tunneling
 
-For databases behind a bastion host, add SSH vars to the `env` block:
+For databases behind a bastion host, point the connection at the internal host and add:
 
-```json
-{
-  "env": {
-    "MYSQL_DSN": "mysql://dbuser:dbpass@internal-db:3306/mydb",
-    "MYSQL_MCP_SSH_HOST": "bastion.example.com",
-    "MYSQL_MCP_SSH_USER": "deploy",
-    "MYSQL_MCP_SSH_KEY_PATH": "/home/user/.ssh/id_rsa"
-  }
-}
+```env
+MYSQL_MCP_SSH_HOST=bastion.example.com
+MYSQL_MCP_SSH_USER=deploy
+MYSQL_MCP_SSH_KEY_PATH=/home/user/.ssh/id_rsa
 ```
+
+The server opens the tunnel and rewrites the DSN to the local forwarded port itself.
 
 ### Debugging
 
-- Add `"MYSQL_MCP_LOG_LEVEL": "debug"` to the `env` block for verbose output.
-- Add `"MYSQL_MCP_JSON_LOGS": "true"` for structured JSON logs.
-- Add `"MYSQL_MCP_AUDIT_LOG": "/tmp/mcp-audit.jsonl"` to record all queries.
-- After changing any MCP config, restart the editor or reload the window.
+```env
+MYSQL_MCP_LOG_LEVEL=debug          # verbose output
+MYSQL_MCP_JSON_LOGS=true           # structured JSON logs
+MYSQL_MCP_AUDIT_LOG=/tmp/mcp-audit.jsonl
+```
+
+Logs go to **stderr**, which is what MCP clients capture — stdout carries the protocol.
+When a client reports the server failed to start, run it by hand first; that surfaces
+the real error without the client swallowing it:
+
+```bash
+node /absolute/path/to/mysql-mcp-server/dist/index.js --print-config
+```
+
+After changing any MCP config, restart the editor or reload the window.

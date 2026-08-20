@@ -22,30 +22,61 @@ npm run build
 
 ## Quick Start
 
-### 1. Set the MySQL DSN
+### 1. Create your `.env`
 
 ```bash
-export MYSQL_DSN="mysql://user:password@localhost:3306/mydb"
+cp .env.example .env
 ```
 
-DSN format: `mysql://[user]:[password]@[host]:[port]/[database]`
+Edit the connection block at the top — this is the only place the server reads
+credentials from:
 
-### 2. Run the Server
+```env
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_USER=user
+MYSQL_PASSWORD=your-password
+MYSQL_DATABASE=mydb
+```
+
+Or use a single DSN instead of the five variables:
+
+```env
+MYSQL_DSN=mysql://user:password@localhost:3306/mydb
+```
+
+DSN format: `mysql://[user]:[password]@[host]:[port]/[database]`. Prefer the
+individual variables when the password contains `#`, `@`, `/`, or `?` — they are
+URL-encoded for you, so you do not have to escape anything.
+
+> **Exported shell variables do not work.** `export MYSQL_DSN=...` and inline
+> `MYSQL_DSN=... npm start` are both ignored — `.env` is loaded with `override`, so it
+> wins over the environment. Use `--dsn` for a one-off connection (see step 3).
+
+### 2. Verify the Config
+
+```bash
+npm start -- --print-config
+```
+
+This prints the fully resolved config with the password masked. Check the DSN line
+before going further — if the host, port, user, or database is wrong, the fix is in
+`.env`.
+
+### 3. Run the Server
 
 ```bash
 # MCP stdio mode (default)
 npm start
 
-# Or with the DSN inline
-MYSQL_DSN="mysql://user:password@localhost:3306/mydb" npm start
+# One-off connection to a different database, without touching .env
+npm start -- --dsn "mysql://user:password@otherhost:3306/otherdb"
 ```
 
-### 3. Verify It Works
+### 4. Verify It Works
 
 ```bash
-# HTTP mode with health check
-MYSQL_DSN="mysql://user:password@localhost:3306/mydb" \
-  npm start -- --transport http --port 3000
+npm start -- --transport http --port 3000
 
 # In another terminal
 curl http://localhost:3000/health
@@ -62,19 +93,34 @@ npm run dev
 
 ## Environment File
 
-Create a `.env` file in the project root:
+`.env` lives in the repo root and is the single source of credentials:
 
 ```env
-MYSQL_DSN=mysql://user:password@localhost:3306/mydb
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_USER=user
+MYSQL_PASSWORD=your-password
+MYSQL_DATABASE=mydb
+
 MYSQL_MCP_EXTENDED=true
 MYSQL_MCP_AUDIT_LOG=./audit.jsonl
 ```
 
-The server loads `.env` automatically via `dotenv`.
+The server resolves this file from **its own install directory**, not from the current
+working directory, so an MCP client can launch it from anywhere and still get the same
+credentials. It is loaded with `override: true`, so it also wins over any variable the
+client passes in its `env` block. `.env` is gitignored.
+
+If the file is missing, the server prints a warning naming the path it looked for and
+then falls back to whatever is in the ambient environment — so a client `env` block or
+an exported variable still works when there is no `.env` at all. Once `.env` exists, it
+takes over for every variable it defines.
 
 ## Config File
 
-You can also use a `config.yaml` or `config.json` file in the project root:
+A `config.yaml` or `config.json` in the **launch directory** is merged in *underneath*
+`.env` — it cannot override a credential `.env` sets, but it does supply anything `.env`
+leaves unset:
 
 ```yaml
 # config.yaml

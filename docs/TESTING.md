@@ -38,6 +38,11 @@ export MYSQL_DSN="mysql://user:password@localhost:3306/testdb"
 npx vitest run --config vitest.config.integration.ts
 ```
 
+`export` works here — unlike when running the server. The integration tests read
+`process.env.MYSQL_DSN` directly and never load `src/index.ts`, so the repo `.env` is
+not involved and cannot override the test database. Default if unset:
+`mysql://root:root@localhost:3306/test`.
+
 ## Test Structure
 
 ```

@@ -3,9 +3,18 @@
 The server resolves configuration from multiple sources with the following priority (highest first):
 
 1. **CLI arguments** (`--dsn`, `--port`, etc.)
-2. **Environment variables** (`MYSQL_DSN`, etc.)
-3. **Config file** (`config.yaml`, `config.yml`, or `config.json`)
-4. **Built-in defaults**
+2. **`.env` in the repo root** — resolved from the server's own install directory, not
+   the working directory, and loaded with `override: true`
+3. **Ambient environment variables** — only for variables `.env` does not define
+4. **Config file** (`config.yaml`, `config.yml`, or `config.json`, read from the
+   working directory) — only for settings nothing above defines
+5. **Built-in defaults**
+
+Levels 2 and 3 are the same layer mechanically — `.env` is loaded *into* the process
+environment — but because it loads with `override`, anything `.env` defines beats what
+the parent process passed in. That means an MCP client's `env` block and an exported
+shell variable are both ignored for any variable `.env` sets. Credentials therefore have
+exactly one home: `.env`. Use `--dsn` for a one-off override.
 
 ## Environment Variables
 
@@ -14,7 +23,7 @@ The server resolves configuration from multiple sources with the following prior
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `MYSQL_DSN` | Default MySQL connection string | `mysql://user:pass@host:3306/db` |
-| `MYSQL_CONNECTIONS` | JSON object with named connections | `{"staging":{"dsn":"mysql://..."}}` |
+| `MYSQL_CONNECTIONS` | JSON object with named connections; replaces the whole set, must include `default` | `{"default":{"dsn":"mysql://..."}}` |
 
 ### Query
 
@@ -201,12 +210,12 @@ System schemas (`information_schema`, `performance_schema`, `mysql`, `sys`) are 
 
 Connect to MySQL through an SSH bastion host:
 
-```bash
-MYSQL_DSN="mysql://dbuser:dbpass@remote-db:3306/mydb" \
-MYSQL_MCP_SSH_HOST="bastion.example.com" \
-MYSQL_MCP_SSH_USER="deploy" \
-MYSQL_MCP_SSH_KEY_PATH="~/.ssh/id_rsa" \
-npm start
+```env
+# In .env — inline shell variables are ignored once .env defines them.
+MYSQL_DSN=mysql://dbuser:dbpass@remote-db:3306/mydb
+MYSQL_MCP_SSH_HOST=bastion.example.com
+MYSQL_MCP_SSH_USER=deploy
+MYSQL_MCP_SSH_KEY_PATH=~/.ssh/id_rsa
 ```
 
 The server opens a local port, tunnels traffic through SSH, and rewrites the DSN to `127.0.0.1:<localPort>`.
@@ -216,8 +225,8 @@ The server opens a local port, tunnels traffic through SSH, and rewrites the DSN
 Define multiple named connections and switch between them at runtime:
 
 ```bash
-export MYSQL_DSN="mysql://user:pass@prod-db:3306/app"
-export MYSQL_CONNECTIONS='{"staging":{"dsn":"mysql://user:pass@staging-db:3306/app"},"analytics":{"dsn":"mysql://user:pass@analytics-db:3306/warehouse"}}'
+# In .env — MYSQL_CONNECTIONS replaces the whole set, so "default" must be present.
+MYSQL_CONNECTIONS={"default":{"dsn":"mysql://user:pass@prod-db:3306/app"},"staging":{"dsn":"mysql://user:pass@staging-db:3306/app"},"analytics":{"dsn":"mysql://user:pass@analytics-db:3306/warehouse"}}
 ```
 
 Use the `use_connection` tool to switch between connections during a session.

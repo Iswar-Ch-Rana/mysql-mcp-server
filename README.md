@@ -46,19 +46,30 @@ A **read-only MySQL MCP (Model Context Protocol) server** built with TypeScript 
 ```bash
 # 1. Clone and install
 git clone <repo-url>
-cd mysql-mcp-server-ts
+cd mysql-mcp-server
 npm install
 
-# 2. Configure (copy and edit)
+# 2. Set your credentials — edit the connection block at the top of .env
 cp .env.example .env
+${EDITOR:-nano} .env
 
 # 3. Build
 npm run build
 
-# 4. Run (stdio/MCP mode)
-npm start
+# 4. Check the config the server actually resolved (password masked)
+node dist/index.js --print-config
 
-# Or start in HTTP mode to test with curl / Postman
+# 5. Run (stdio/MCP mode)
+npm start
+```
+
+Step 4 is the one to trust: it prints the DSN the server will really use. If the
+host, port, user, or database is not what you expect, fix `.env` — nothing else
+supplies credentials.
+
+To smoke-test over HTTP instead of MCP:
+
+```bash
 npm run start:http
 curl http://localhost:3000/health
 ```
@@ -76,24 +87,17 @@ curl http://localhost:3000/health
 ### Step-by-step
 
 ```bash
-# Clone
 git clone <repo-url>
-cd mysql-mcp-server-ts
-
-# Install dependencies
+cd mysql-mcp-server
 npm install
-
-# Copy the example env file
 cp .env.example .env
 ```
 
-Edit `.env` — at minimum, set one of:
+**Set your credentials in `.env`.** This file, in the repo root, is the only place
+the server reads credentials from. Fill in the connection block that `.env.example`
+already provides:
 
 ```env
-# Option A: DSN string
-MYSQL_DSN=mysql://user:password@localhost:3306/mydb
-
-# Option B: Individual variables (handles special chars in password)
 MYSQL_HOST=localhost
 MYSQL_PORT=3306
 MYSQL_USER=user
@@ -101,12 +105,44 @@ MYSQL_PASSWORD=your-password
 MYSQL_DATABASE=mydb
 ```
 
-Then build and run:
+Or replace that block with a single DSN, if your password has no special characters:
+
+```env
+MYSQL_DSN=mysql://user:password@localhost:3306/mydb
+```
+
+Build, verify, run:
 
 ```bash
 npm run build
+node dist/index.js --print-config   # confirm the resolved DSN (password masked)
 npm start
 ```
+
+`.env` is gitignored, so your credentials never get committed.
+
+#### Where credentials come from
+
+The server resolves `.env` **from its own install directory**, not from the current
+working directory — so it finds the same file no matter where an MCP client launches
+it from. It loads with `override`, which means:
+
+| Source | Effect |
+|--------|--------|
+| `--dsn` on the command line | **Overrides `.env`** — the one intentional escape hatch |
+| `.env` in the repo root | The authority for every variable it defines |
+| `env` block in an MCP client config | Ignored for any variable `.env` defines |
+| `export MYSQL_DSN=...` in your shell | Ignored for any variable `.env` defines |
+| `config.yaml` / `config.json` in the launch directory | Still supplies settings `.env` leaves unset |
+
+This is deliberate: one file to change, and no silent disagreement between a client
+config and `.env`. For a one-off connection to a different database without editing
+`.env`, pass `--dsn`.
+
+Note the last row — a `config.yaml` sitting in whatever directory the client launched
+from is still merged in underneath `.env`. It cannot override your credentials, but it
+can set things `.env` says nothing about (row limits, pool size). If you want no
+ambiguity at all, keep those directories free of `config.yaml`.
 
 ---
 
