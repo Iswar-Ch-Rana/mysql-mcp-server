@@ -112,7 +112,7 @@ npm start
 
 ## Environment Configuration
 
-All configuration is in `.env`. Copy `.env.example` to get started — every variable is commented with a description.
+All configuration is in `.env` in the repo root. Copy `.env.example` — the connection block is live, everything else is commented out at its default. Full reference below.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
@@ -193,18 +193,21 @@ See [docs/INTEGRATION.md](docs/INTEGRATION.md) for full integration instructions
 
 ## Integration with AI Clients
 
-After building, point any MCP client at `dist/index.js`. A minimal config block (the same pattern works for Claude, VS Code, Cursor, Continue, and Codex):
+After building, point any MCP client at `dist/index.js`. Credentials come from the
+`.env` file **in the repo root** — the server resolves it from its own location, so the
+client needs no `env` block and no particular working directory:
 
 ```json
 {
   "command": "node",
-  "args": ["/absolute/path/to/mysql-mcp-server-ts/dist/index.js"],
-  "env": {
-    "MYSQL_DSN": "mysql://user:password@localhost:3306/mydb",
-    "MYSQL_MCP_EXTENDED": "true"
-  }
+  "args": ["/absolute/path/to/mysql-mcp-server/dist/index.js"]
 }
 ```
+
+The same block works for Claude, VS Code, Cursor, Continue, and Codex. An `env` block
+in the client config is **ignored** for any variable the repo `.env` also sets — this is
+deliberate, so there is exactly one place to change a credential. Only `--dsn` on the
+command line overrides `.env`.
 
 | Client | Config file |
 |--------|------------|

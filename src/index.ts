@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import dotenv from 'dotenv';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseArgs } from './interface/cli/args.js';
 import { loadConfig } from './infrastructure/config/loader.js';
 import { WinstonLogger } from './infrastructure/logging/logger.js';
@@ -21,8 +23,17 @@ import { HttpTransport } from './infrastructure/transport/http.transport.js';
 import { maskDsn, parseDsn } from './infrastructure/database/mysql/mysql.utils.js';
 import { VERSION } from './shared/constants.js';
 
+// The repo's .env is the single source of credentials. Resolve it from this
+// file's location — not cwd — so the MCP client's working directory is irrelevant,
+// and override inherited vars so a client-supplied env block can't shadow it.
+const ENV_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '..', '.env');
+
 async function main(): Promise<void> {
-  dotenv.config();
+  const loaded = dotenv.config({ path: ENV_PATH, override: true });
+
+  if (loaded.error) {
+    console.error(`Warning: could not read ${ENV_PATH}: ${loaded.error.message}`);
+  }
 
   const cliArgs = parseArgs(process.argv);
   const config = await loadConfig(cliArgs, process.env);
